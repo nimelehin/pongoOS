@@ -266,6 +266,8 @@ void shell_main() {
     command_register("recursion", "tests stack guards", recursion_cmd);
     extern void linux_commands_register(void);
     linux_commands_register();
+    extern void opuntiaos_commands_register(void);
+    opuntiaos_commands_register();
     usbloader_init();
 
     /*

@@ -64,7 +64,7 @@ CHECKRA1N_CC_FLAGS      ?= -DCHECKRAIN_VERSION='"0.12.4"' -I$(INC) -Iapple-inclu
 
 STAGE3_ENTRY_C          := $(patsubst %, $(SRC)/boot/%, stage3.c clearhook.S patches.S demote_patch.S jump_to_image.S main.c)
 PONGO_C                 := $(wildcard $(SRC)/kernel/*.c) $(wildcard $(SRC)/kernel/support/*.c) $(wildcard $(SRC)/dynamic/*.c) $(wildcard $(SRC)/kernel/*.S) $(wildcard $(SRC)/shell/*.c)
-PONGO_DRIVERS_C         := $(wildcard $(SRC)/drivers/*/*.c) $(wildcard $(SRC)/drivers/*/*.S) $(wildcard $(SRC)/modules/linux/*/*.c) $(wildcard $(SRC)/modules/linux/*.c) $(wildcard $(SRC)/lib/*/*.c)
+PONGO_DRIVERS_C         := $(wildcard $(SRC)/drivers/*/*.c) $(wildcard $(SRC)/drivers/*/*.S) $(wildcard $(SRC)/modules/linux/*/*.c) $(wildcard $(SRC)/modules/linux/*.c)  $(wildcard $(SRC)/modules/opuntiaos/*/*.c) $(wildcard $(SRC)/modules/opuntiaos/*.c) $(wildcard $(SRC)/lib/*/*.c)
 
 CHECKRA1N_C             := $(RA1N)/main.c $(RA1N)/shellcode.S
 CHECKRA1N_NOSTRIP       := $(RA1N)/not_strip.txt

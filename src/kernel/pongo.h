@@ -128,6 +128,7 @@ extern volatile char gBootFlag;
 #define BOOT_FLAG_HOOK 2
 #define BOOT_FLAG_LINUX 3
 #define BOOT_FLAG_RAW 4
+#define BOOT_FLAG_OPUNTIA 5
 
 #define LINUX_DTREE_SIZE 262144
 #define LINUX_CMDLINE_SIZE 4096
@@ -436,6 +437,9 @@ extern void wdt_disable();
 extern bool linux_can_boot();
 extern void linux_prep_boot();
 extern void linux_boot();
+extern bool opuntia_can_boot();
+extern void opuntia_prep_boot();
+extern void opuntia_boot();
 extern void command_register(const char* name, const char* desc, void (*cb)(const char* cmd, char* args));
 extern char* command_tokenize(char* str, uint32_t strbufsz);
 extern uint8_t get_el(void);

@@ -233,32 +233,36 @@ __attribute__((noinline)) void pongo_entry_cached()
     disable_interrupts();
     preemption_over = 1;
 
-    const char *boot_msg = NULL;
+    const char* boot_msg = NULL;
 
-    switch(gBootFlag)
-    {
-        default: // >4
-        case BOOT_FLAG_RAW: // 4
-            break;
+    switch (gBootFlag) {
+    default: // >5
+    case BOOT_FLAG_RAW: // 4
+        break;
 
-        case BOOT_FLAG_LINUX: // 3
-            linux_prep_boot();
-            boot_msg = "Booting Linux...";
-            break;
+    case BOOT_FLAG_OPUNTIA: // 5
+        opuntia_prep_boot();
+        boot_msg = "Booting opuntiaOS...";
+        break;
 
-        case BOOT_FLAG_HOOK: // 2
-            // Hook for kernel patching here
-            screen_puts("Invoking preboot hook");
-            xnu_hook();
-            // Fall through
-        case BOOT_FLAG_HARD: // 1
-        case BOOT_FLAG_DEFAULT: // 0
-            // Boot XNU
-            xnu_loadrd();
-            if (sep_boot_hook)
-                sep_boot_hook();
-            boot_msg = "Booting";
-            break;
+    case BOOT_FLAG_LINUX: // 3
+        linux_prep_boot();
+        boot_msg = "Booting Linux...";
+        break;
+
+    case BOOT_FLAG_HOOK: // 2
+        // Hook for kernel patching here
+        screen_puts("Invoking preboot hook");
+        xnu_hook();
+        // Fall through
+    case BOOT_FLAG_HARD: // 1
+    case BOOT_FLAG_DEFAULT: // 0
+        // Boot XNU
+        xnu_loadrd();
+        if (sep_boot_hook)
+            sep_boot_hook();
+        boot_msg = "Booting";
+        break;
     }
 
     sep_teardown();
@@ -301,26 +305,22 @@ void pongo_entry(uint64_t *kernel_args, void *entryp, void (*exit_to_el1_image)(
     set_exception_stack_core0();
     pongo_entry_cached();
     extern void lowlevel_set_identity(void);
-    lowlevel_set_identity();
-    rebase_pc(-gPongoSlide);
-    set_exception_stack_core0();
-    gFramebuffer = (uint32_t*)gBootArgs->Video.v_baseAddr;
-    lowlevel_cleanup();
-    if(gBootFlag == BOOT_FLAG_RAW)
-    {
+    // lowlevel_set_identity();
+    // rebase_pc(-gPongoSlide);
+    // set_exception_stack_core0();
+    //  gFramebuffer = vbase;
+    //  lowlevel_cleanup();
+    if (gBootFlag == BOOT_FLAG_RAW) {
         jump_to_image_extended(((uint64_t)loader_xfer_recv_data) - kCacheableView + 0x800000000, (uint64_t)gBootArgs, (uint64_t)gEntryPoint);
-    }
-    else if(gBootFlag == BOOT_FLAG_LINUX)
-    {
+    } else if (gBootFlag == BOOT_FLAG_LINUX) {
         linux_boot();
-    }
-    else
-    {
+    } else if (gBootFlag == BOOT_FLAG_OPUNTIA) {
+        opuntia_boot();
+    } else {
         tz_lockdown();
         xnu_boot();
     }
     exit_to_el1_image((void*)gBootArgs, gEntryPoint);
     screen_puts("didn't boot?!");
-    while(1)
-    {}
+    while (1) { }
 }
