@@ -19,45 +19,38 @@ extern uint64_t gIOBase;
 extern uint64_t gOpuntiaosVbase;
 extern uint64_t gOpuntiaosPbase;
 extern uint64_t gLastLoadedElfVaddr;
+extern uint64_t gCOPYOpuntiaosVbase;
+extern uint64_t gCOPYOpuntiaosPbase;
 void* gOpunKernel = NULL;
 uint64_t gOpunKernelSize = 0;
 void* gOpunBootArgs = 0;
 
 static void* alloc_after_kenrel(size_t size)
 {
+    // It is already mmaped by a block of 2mb
     void* res = (void*)gLastLoadedElfVaddr;
-
-    // Just remapping everything. Expensive, but easy :)
-    uint64_t startvaddr = (uint64_t)res;
-    uint64_t vaddr = startvaddr & (~0x3fffULL);
-    uint64_t paddr = vaddr - gOpuntiaosVbase + gOpuntiaosPbase;
-    uint64_t mapsize = ROUND_CEIL(size + (startvaddr - vaddr), 0x4000);
-    extern void map_range_noflush_rwx(uint64_t va, uint64_t pa, uint64_t size, uint64_t sh, uint64_t attridx, bool overwrite);
-    map_range_noflush_rwx(vaddr, paddr, mapsize, 3, 1, true);
-    flush_tlb();
-
     gLastLoadedElfVaddr = ROUND_CEIL(gLastLoadedElfVaddr + size, 256);
+
+    if ((gLastLoadedElfVaddr + (32 << 20)) < gLastLoadedElfVaddr) {
+        iprintf("OOM during boot\n");
+        for (;;) { }
+    }
     return res;
-}
-
-static void map_space_for_pmm()
-{
-    // TODO: Calc the real size.
-    uint64_t vaddr = ROUND_FLOOR(gLastLoadedElfVaddr, 0x4000);
-    uint64_t paddr = vaddr - gOpuntiaosVbase + gOpuntiaosPbase;
-    uint64_t mapsize = 0x40000;
-
-    extern void map_range_noflush_rwx(uint64_t va, uint64_t pa, uint64_t size, uint64_t sh, uint64_t attridx, bool overwrite);
-    map_range_noflush_rwx(vaddr, paddr, mapsize, 3, 1, true);
-    flush_tlb();
 }
 
 void opuntia_prep_boot()
 {
     // pongoOS is used as bootloader for opuntiaOS and should have similar
-    // functionality to other bootloaders thus mmu should be inited.
-    // gOpunKernel = (void*)(((uint64_t)gOpunKernel) - kCacheableView + 0x800000000);
+    // functionality to other bootloaders. At this stage, there is
+    // a common entry point for qemu-virt and apl devs, so we have to use
+    // mmu here to emulate loading at 1gb mark.
     gEntryPoint = (void*)gOpuntiaosVbase;
+
+    // TODO: Remove this, just a double-check that gOpuntiaosVbase is not used here.
+    if (memcmp((void*)gOpuntiaosVbase, (void*)gCOPYOpuntiaosVbase, 4 << 20)) {
+        iprintf("Diff in loaded data, hmm...\n");
+        for (;;) { }
+    }
 
     memory_map_t* memmap_entry = alloc_after_kenrel(sizeof(memory_map_t));
     // Thinking that RAM which is avail starts from the address where kernel
@@ -85,8 +78,7 @@ void opuntia_prep_boot()
     args->kernel_size = gLastLoadedElfVaddr - gOpuntiaosVbase;
 
     gOpunBootArgs = args;
-    map_space_for_pmm();
-    iprintf("Booting OpuntiaOS: %p(%p)\n", gEntryPoint, gOpunBootArgs);
+    iprintf("Booting OpuntiaOS: %p(%p) %d -- %lx\n", gEntryPoint, gOpunBootArgs, is_16k(), gBootArgs->Video.v_baseAddr);
 }
 
 volatile void jump_to_image(uint64_t args, uint64_t original_image);

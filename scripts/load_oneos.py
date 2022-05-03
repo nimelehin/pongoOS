@@ -38,10 +38,10 @@ with open(args.kernel, 'rb') as elffile:
             if len(segment.data()) == 0:
                 continue
             
-            senddata = struct.pack('Q', seg_head.p_vaddr) + struct.pack('Q', seg_head.p_memsz) + segment.data()
+            senddata = struct.pack('Q', seg_head.p_paddr) + struct.pack('Q', seg_head.p_memsz) + segment.data()
             datalen = len(senddata)
             
-            print("PT_LOAD segement, size ", datalen, seg_head.p_vaddr, seg_head.p_memsz)
+            print("PT_LOAD segement, size ", datalen, seg_head.p_paddr, seg_head.p_memsz)
             dev.ctrl_transfer(0x21, 2, 0, 0, 0)
             dev.ctrl_transfer(0x21, 1, 0, 0, struct.pack('I', datalen))
             dev.write(2, senddata, 1000000)
