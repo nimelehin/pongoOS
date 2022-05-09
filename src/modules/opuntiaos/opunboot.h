@@ -36,4 +36,35 @@ struct opun_boot_args {
 };
 typedef struct opun_boot_args opun_boot_args_t;
 
+#define PACKED __attribute__((packed))
+
+struct PACKED devtree_header {
+    char signature[8];
+    uint32_t revision;
+    uint32_t flags;
+    uint32_t entries_count;
+    uint32_t name_list_offset;
+};
+typedef struct devtree_header devtree_header_t;
+
+#define DEVTREE_ENTRY_FLAGS_MMIO = (1 << 0)
+#define DEVTREE_ENTRY_TYPE_IO (0)
+#define DEVTREE_ENTRY_TYPE_FB (1)
+#define DEVTREE_ENTRY_TYPE_UART (2)
+#define DEVTREE_ENTRY_TYPE_RAM (3)
+#define DEVTREE_ENTRY_TYPE_STORAGE (4)
+#define DEVTREE_ENTRY_TYPE_BUS_CONTROLLER (5)
+
+struct PACKED devtree_entry {
+    uint32_t type;
+    uint32_t flags;
+    uint64_t region_base;
+    uint64_t region_size;
+    uint32_t irq_lane;
+    uint32_t irq_flags;
+    uint32_t irq_priority;
+    uint32_t rel_name_offset;
+};
+typedef struct devtree_entry devtree_entry_t;
+
 #endif // OPUNBOOT

@@ -32,9 +32,17 @@ int gOpuntiaHasLoaded = 0;
 // TODO: Hardcoded values for now.
 uint64_t gOpuntiaosVbase = 0x40000000;
 uint64_t gOpuntiaosPbase = 0x0;
-uint64_t gCOPYOpuntiaosVbase = 0xc20000000;
-uint64_t gCOPYOpuntiaosPbase = 0x0;
 uint64_t gLastLoadedElfVaddr = 0x0;
+
+uint64_t gCOPYOpuntiaosVbase = 0xc30000000;
+uint64_t gCOPYOpuntiaosPbase = 0x0;
+
+void* gOpuntiaDevtreeBase = NULL;
+uint64_t gOpuntiaDevtreeSize = 0x0;
+
+void* gOpuntiaRamdiskVbase = (void*)0xc20000000;
+void* gOpuntiaRamdiskPbase = NULL;
+uint64_t gOpuntiaRamdiskSize = 0x0;
 
 struct elfseg_data {
     uint64_t vbase;
@@ -82,6 +90,48 @@ static void dump_table(uint64_t virt)
     pdir = (uint64_t*)(((lv1desc >> 12) << 12) & 0xffffffffffff);
     uint64_t lv0desc = pdir[VM_VADDR_OFFSET_AT_LEVEL(virt, PTABLE_LV0_VADDR_OFFSET, VMM_LV0_ENTITY_COUNT)];
     iprintf("Debug Ptable, lv0 at virt %llx, lv1 info: %llx\n", virt, lv0desc);
+}
+
+void pongo_load_devtree()
+{
+    if (!loader_xfer_recv_count) {
+        iprintf("No devtree is transmitted\n");
+        return;
+    }
+
+    gOpuntiaDevtreeBase = malloc(loader_xfer_recv_count);
+    if (!gOpuntiaDevtreeBase)
+        panic("couldn't reserve heap for opuntia devtree");
+
+    gOpuntiaDevtreeSize = loader_xfer_recv_count;
+    memcpy(gOpuntiaDevtreeBase, loader_xfer_recv_data, loader_xfer_recv_count);
+    iprintf("Load OpuntiaOS Paddr Base at %llx\n", gOpuntiaosPbase);
+
+    loader_xfer_recv_count = 0;
+}
+
+void pongo_load_ramdisk()
+{
+    if (!loader_xfer_recv_count) {
+        iprintf("No ramdisk is transmitted\n");
+        return;
+    }
+
+    // Load it after 512mb mark which is a ramsize for opuntiaOS.
+    uint64_t pa = alloc_phys(512 << 20);
+    gOpuntiaRamdiskPbase = (void*)ROUND_CEIL(alloc_phys(loader_xfer_recv_count + (1 << 20)), 1 << 20);
+    gOpuntiaRamdiskSize = loader_xfer_recv_count;
+    free_phys(pa, 512 << 20);
+
+    size_t size_to_map = ROUND_CEIL(gOpuntiaRamdiskSize, 16 << 10);
+    extern void map_range_noflush_rwx(uint64_t va, uint64_t pa, uint64_t size, uint64_t sh, uint64_t attridx, bool overwrite);
+    map_range_noflush_rwx((uint64_t)gOpuntiaRamdiskVbase, (uint64_t)gOpuntiaRamdiskPbase, size_to_map, 3, 1, true);
+    flush_tlb();
+
+    memcpy(gOpuntiaRamdiskVbase, loader_xfer_recv_data, loader_xfer_recv_count);
+
+    iprintf("Load OpuntiaOS Ramdisk Paddr Base at %p\n", gOpuntiaRamdiskPbase);
+    loader_xfer_recv_count = 0;
 }
 
 void pongo_load_elfseg_into_ram()
@@ -158,5 +208,7 @@ void opuntiaos_commands_register()
 {
     command_register("booto", "boot oneos image", pongo_boot_opuntia);
     command_register("elfsego", "load elf seg", pongo_load_elfseg_into_ram);
+    command_register("devtreeo", "load opuntiaos devtree", pongo_load_devtree);
+    command_register("ramdisko", "load opuntiaos devtree", pongo_load_ramdisk);
     command_register("dumpinfoo", "dump info for opuntia", pongo_dump_info);
 }
