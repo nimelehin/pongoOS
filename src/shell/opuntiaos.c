@@ -6,6 +6,7 @@
  * found in the LICENSE file.
  */
 
+#include <lzma/lzmadec.h>
 #include <pongo.h>
 
 extern volatile char gBootFlag;
@@ -118,19 +119,26 @@ void pongo_load_ramdisk()
     }
 
     // Load it after 512mb mark which is a ramsize for opuntiaOS.
-    uint64_t pa = alloc_phys(512 << 20);
-    gOpuntiaRamdiskPbase = (void*)ROUND_CEIL(alloc_phys(loader_xfer_recv_count + (1 << 20)), 1 << 20);
+    uint64_t pa = alloc_phys(368 << 20);
+    gOpuntiaRamdiskPbase = (void*)ROUND_CEIL(alloc_phys(128 << 20), 1 << 20);
     gOpuntiaRamdiskSize = loader_xfer_recv_count;
-    free_phys(pa, 512 << 20);
+    free_phys(pa, 368 << 20);
 
     size_t size_to_map = ROUND_CEIL(gOpuntiaRamdiskSize, 16 << 10);
     extern void map_range_noflush_rwx(uint64_t va, uint64_t pa, uint64_t size, uint64_t sh, uint64_t attridx, bool overwrite);
     map_range_noflush_rwx((uint64_t)gOpuntiaRamdiskVbase, (uint64_t)gOpuntiaRamdiskPbase, size_to_map, 3, 1, true);
     flush_tlb();
 
-    memcpy(gOpuntiaRamdiskVbase, loader_xfer_recv_data, loader_xfer_recv_count);
+    size_t total_ramdisk_size = 0x10000000;
+    int res = unlzma_decompress((uint8_t*)gOpuntiaRamdiskVbase, &total_ramdisk_size, loader_xfer_recv_data, loader_xfer_recv_count);
+    if (res != SZ_OK) {
+        puts("Assuming decompressed ramdisk.");
+        total_ramdisk_size = loader_xfer_recv_count;
+        memcpy(gOpuntiaRamdiskVbase, loader_xfer_recv_data, loader_xfer_recv_count);
+    }
 
-    iprintf("Load OpuntiaOS Ramdisk Paddr Base at %p\n", gOpuntiaRamdiskPbase);
+    iprintf("Load OpuntiaOS Ramdisk Paddr Base at %p of size %zx\n", gOpuntiaRamdiskPbase, total_ramdisk_size);
+    gOpuntiaRamdiskSize = total_ramdisk_size;
     loader_xfer_recv_count = 0;
 }
 
@@ -179,6 +187,42 @@ void pongo_load_elfseg_into_ram()
     gLastLoadedElfVaddr = max(gLastLoadedElfVaddr, vaddr + mapsize);
 }
 
+void pongo_load_raw_image()
+{
+    if (!loader_xfer_recv_count) {
+        iprintf("No segment is transmitted\n");
+        return;
+    }
+
+    if (!gOpuntiaosPbase) {
+        // Allocating ~64mb, which are aligned at 2mb mark.
+        // It is used for kernel, arguments and PMM.
+        gOpuntiaosPbase = ROUND_CEIL(alloc_phys(67 << 20), 2 << 20);
+        iprintf("Load OpuntiaOS Paddr Base at %llx\n", gOpuntiaosPbase);
+
+        // TODO: Mapping everything with RWX perms, need to be fixed.
+        extern void map_range_noflush_rwx(uint64_t va, uint64_t pa, uint64_t size, uint64_t sh, uint64_t attridx, bool overwrite);
+        map_range_noflush_rwx(gOpuntiaosVbase, gOpuntiaosPbase, 4 << 20, 3, 1, true);
+        map_range_noflush_rwx(gOpuntiaosPbase, gOpuntiaosPbase, 4 << 20, 3, 1, true);
+        flush_tlb();
+
+        memset((void*)gOpuntiaosVbase, 0, 4 << 20);
+
+        dump_table(gOpuntiaosVbase);
+        dump_table(0xfb0000000ULL);
+    }
+
+    size_t datalen = loader_xfer_recv_count;
+    void* rawimage = loader_xfer_recv_data;
+    iprintf("Load OpuntiaOS Raw Image: %llx %zx @%llx\n", gOpuntiaosPbase, datalen, gOpuntiaosVbase);
+
+    memcpy((void*)gOpuntiaosPbase, rawimage, datalen);
+
+    loader_xfer_recv_count = 0;
+    gOpuntiaHasLoaded = 1;
+    gLastLoadedElfVaddr = (uint64_t)gOpuntiaosVbase + datalen;
+}
+
 void pongo_dump_info()
 {
     uint64_t pstd = ROUND_CEIL(alloc_phys(16 << 20), 4 << 20);
@@ -210,5 +254,6 @@ void opuntiaos_commands_register()
     command_register("elfsego", "load elf seg", pongo_load_elfseg_into_ram);
     command_register("devtreeo", "load opuntiaos devtree", pongo_load_devtree);
     command_register("ramdisko", "load opuntiaos devtree", pongo_load_ramdisk);
+    command_register("rawimgo", "load raw image", pongo_load_raw_image);
     command_register("dumpinfoo", "dump info for opuntia", pongo_dump_info);
 }

@@ -32,6 +32,8 @@ extern void* gOpuntiaRamdiskVbase;
 extern void* gOpuntiaRamdiskPbase;
 extern uint64_t gOpuntiaRamdiskSize;
 
+extern uint32_t* gFramebuffer;
+
 void* gOpunKernel = NULL;
 uint64_t gOpunKernelSize = 0;
 void* gOpunBootArgs = 0;
@@ -63,14 +65,26 @@ devtree_entry_t* devtree_find_device(const char* name)
     return NULL;
 }
 
-static void devtree_fillup_ramdisk()
+void* alloc_after_kernel(size_t size)
 {
-    if (!gOpuntiaDevtreeBase) {
+    // It is already mmaped by a block of 2mb
+    void* res = (void*)gLastLoadedElfVaddr;
+    gLastLoadedElfVaddr = ROUND_CEIL(gLastLoadedElfVaddr + size, 256);
+
+    if ((gLastLoadedElfVaddr + (32 << 20)) < gLastLoadedElfVaddr) {
+        panic("OOM during boot");
+    }
+    return res;
+}
+
+static void devtree_fillup(void* devtree)
+{
+    if (!devtree) {
         panic("No devtree loaded");
         return;
     }
 
-    devtree_header = (devtree_header_t*)gOpuntiaDevtreeBase;
+    devtree_header = (devtree_header_t*)devtree;
     devtree_body = (devtree_entry_t*)&devtree_header[1];
     devtree_name_section = ((char*)devtree_header + devtree_header->name_list_offset);
 
@@ -79,34 +93,55 @@ static void devtree_fillup_ramdisk()
         panic("No ramdisk entry");
         return;
     }
-
     rddev->region_base = (uint64_t)gOpuntiaRamdiskPbase;
     rddev->region_size = gOpuntiaRamdiskSize;
+
+    devtree_entry_t* ramdev = devtree_find_device("ram");
+    if (!ramdev) {
+        panic("No ram entry");
+        return;
+    }
+    ramdev->region_base = gOpuntiaosPbase;
+    ramdev->region_size = 368 << 20;
 
     devtree_entry_t* aplfb = devtree_find_device("aplfb");
     if (!aplfb) {
         panic("No aplfb entry");
         return;
     }
-
     uint64_t rowpixels = gBootArgs->Video.v_rowBytes >> 2;
     uint64_t height = gBootArgs->Video.v_height;
     uint64_t fbsize = height * rowpixels * 4;
     aplfb->region_base = (uint64_t)gBootArgs->Video.v_baseAddr;
     aplfb->region_size = fbsize;
+    aplfb->aux1 = gBootArgs->Video.v_width;
+    aplfb->aux2 = gBootArgs->Video.v_height;
+    aplfb->aux3 = (gBootArgs->Video.v_rowBytes >> 2);
+    aplfb->aux4 = (uint64_t)gFramebuffer;
 }
 
-static void* alloc_after_kernel(size_t size)
+static void devtree_fillup_rawimage()
 {
-    // It is already mmaped by a block of 2mb
-    void* res = (void*)gLastLoadedElfVaddr;
-    gLastLoadedElfVaddr = ROUND_CEIL(gLastLoadedElfVaddr + size, 256);
+    devtree_header = NULL;
+    for (uint64_t vaddr = gOpuntiaosVbase; gOpuntiaosVbase < gLastLoadedElfVaddr; vaddr++) {
+        if (gOpuntiaosVbase > gLastLoadedElfVaddr - DEVTREE_HEADER_SIGNATURE_LEN) {
+            panic("No devtree in raw image");
+        }
 
-    if ((gLastLoadedElfVaddr + (32 << 20)) < gLastLoadedElfVaddr) {
-        iprintf("OOM during boot\n");
-        for (;;) { }
+        if (memcmp((void*)vaddr, DEVTREE_HEADER_SIGNATURE, DEVTREE_HEADER_SIGNATURE_LEN) == 0) {
+            devtree_header = (devtree_header_t*)vaddr;
+            break;
+        }
     }
-    return res;
+
+    devtree_fillup(devtree_header);
+}
+
+// Loading with a new boot method.
+void opuntia_load_rawimage()
+{
+    gEntryPoint = (void*)gOpuntiaosPbase;
+    devtree_fillup_rawimage();
 }
 
 void opuntia_prep_boot()
@@ -115,52 +150,8 @@ void opuntia_prep_boot()
     // functionality to other bootloaders. At this stage, there is
     // a common entry point for qemu-virt and apl devs, so we have to use
     // mmu here to emulate loading at 1gb mark.
-    gEntryPoint = (void*)gOpuntiaosVbase;
-
-    // TODO: Remove this, just a double-check that gOpuntiaosVbase is not used here.
-    if (memcmp((void*)gOpuntiaosVbase, (void*)gCOPYOpuntiaosVbase, 4 << 20)) {
-        iprintf("Diff in loaded data, hmm...\n");
-        for (;;) { }
-    }
-
-    void* devtree = NULL;
-    if (gOpuntiaRamdiskPbase) {
-        devtree_fillup_ramdisk();
-    }
-
-    if (gOpuntiaDevtreeSize) {
-        devtree = alloc_after_kernel(gOpuntiaDevtreeSize);
-        memcpy(devtree, gOpuntiaDevtreeBase, gOpuntiaDevtreeSize);
-    }
-
-    memory_map_t* memmap_entry = alloc_after_kernel(sizeof(memory_map_t));
-    // Thinking that RAM which is avail starts from the address where kernel
-    // is loaded.
-    memmap_entry[0].startHi = (gOpuntiaosPbase >> 32);
-    memmap_entry[0].startLo = (gOpuntiaosPbase & 0xffffffff);
-    memmap_entry[0].sizeHi = 0x0;
-    // TODO: get this data based on device. For now 512mb
-    memmap_entry[0].sizeLo = (512 << 20);
-    memmap_entry[0].type = 0x1; // Free
-
-    opun_boot_args_t* args = alloc_after_kernel(sizeof(opun_boot_args_t));
-    args->vaddr = gOpuntiaosVbase;
-    args->paddr = gOpuntiaosPbase;
-    args->memory_map = (void*)memmap_entry;
-    args->memory_map_size = 1;
-    args->devtree = devtree;
-    memcpy(args->init_process, LAUNCH_SERVER_PATH, sizeof(LAUNCH_SERVER_PATH));
-
-    args->fb_boot_desc.vaddr = (uint64_t)gFramebuffer;
-    args->fb_boot_desc.paddr = gBootArgs->Video.v_baseAddr;
-    args->fb_boot_desc.width = gBootArgs->Video.v_width;
-    args->fb_boot_desc.height = gBootArgs->Video.v_height;
-    args->fb_boot_desc.pixels_per_row = (gBootArgs->Video.v_rowBytes >> 2);
-
-    args->kernel_size = gLastLoadedElfVaddr - gOpuntiaosVbase;
-
-    gOpunBootArgs = args;
-    iprintf("Booting OpuntiaOS: %p(%p) %d -- %lx\n", gEntryPoint, gOpunBootArgs, is_16k(), gBootArgs->Video.v_baseAddr);
+    opuntia_load_rawimage();
+    iprintf("Booting rawimage OpuntiaOS: %p(None) %d -- none\n", gEntryPoint, is_16k());
 }
 
 volatile void jump_to_image(uint64_t args, uint64_t original_image);

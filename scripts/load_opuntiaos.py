@@ -9,9 +9,7 @@ from elftools.elf.elffile import ELFFile
 parser = argparse.ArgumentParser(description='Kernel image to upload')
 
 parser.add_argument('-k', '--kernel', dest='kernel',
-                    help='Path to kernel image to upload')
-parser.add_argument('-d', '--devtree', dest='devtree',
-                    help='Path to comiled devtree to upload')
+                    help='Path to kernel image (or raw image) to upload')
 parser.add_argument('-r', '--ramdisk', dest='ramdisk',
                     help='Path to ramdisk to upload')
 
@@ -34,43 +32,17 @@ if dev is None:
 else:
     dev.set_configuration()
 
-with open(args.kernel, 'rb') as elffile:
-    for segment in ELFFile(elffile).iter_segments():
-        seg_head = segment.header
-        if seg_head.p_type == "PT_LOAD":
-            if len(segment.data()) == 0:
-                continue
-
-            senddata = struct.pack('Q', seg_head.p_paddr) + \
-                struct.pack('Q', seg_head.p_memsz) + segment.data()
-            datalen = len(senddata)
-
-            print("PT_LOAD segement, size ", datalen,
-                  seg_head.p_paddr, seg_head.p_memsz)
-            dev.ctrl_transfer(0x21, 2, 0, 0, 0)
-            dev.ctrl_transfer(0x21, 1, 0, 0, struct.pack('I', datalen))
-            dev.write(2, senddata, 1000000)
-
-            dev.ctrl_transfer(0x21, 4, 0, 0, 0)
-            print("Sending segment...")
-            try:
-                dev.ctrl_transfer(0x21, 3, 0, 0, "elfsego\n")
-            except:
-                print("Segment loaded")
-
-
-devtree = open(args.devtree, "rb").read()
-devtree_size = len(devtree)
+rawimage = open(args.kernel, "rb").read()
+rawimage_size = len(rawimage)
 dev.ctrl_transfer(0x21, 2, 0, 0, 0)
-dev.ctrl_transfer(0x21, 1, 0, 0, struct.pack('I', devtree_size))
-dev.write(2, devtree, 1000000)
+dev.ctrl_transfer(0x21, 1, 0, 0, struct.pack('I', rawimage_size))
+dev.write(2, rawimage, 1000000)
 dev.ctrl_transfer(0x21, 4, 0, 0, 0)
-print("Sending devtree...")
+print("Sending rawimage...")
 try:
-    dev.ctrl_transfer(0x21, 3, 0, 0, "devtreeo\n")
+    dev.ctrl_transfer(0x21, 3, 0, 0, "rawimgo\n")
 except:
-    print("Devtree loaded")
-
+    print("Rawimage loaded")
 
 ramdisk = open(args.ramdisk, "rb").read()
 ramdisk_size = len(ramdisk)
