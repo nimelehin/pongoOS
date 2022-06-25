@@ -104,20 +104,20 @@ static void devtree_fillup(void* devtree)
     ramdev->region_base = gOpuntiaosPbase;
     ramdev->region_size = 368 << 20;
 
-    devtree_entry_t* aplfb = devtree_find_device("aplfb");
-    if (!aplfb) {
-        panic("No aplfb entry");
+    devtree_entry_t* simplefb = devtree_find_device("simplefb");
+    if (!simplefb) {
+        panic("No simplefb entry");
         return;
     }
     uint64_t rowpixels = gBootArgs->Video.v_rowBytes >> 2;
     uint64_t height = gBootArgs->Video.v_height;
     uint64_t fbsize = height * rowpixels * 4;
-    aplfb->region_base = (uint64_t)gBootArgs->Video.v_baseAddr;
-    aplfb->region_size = fbsize;
-    aplfb->aux1 = gBootArgs->Video.v_width;
-    aplfb->aux2 = gBootArgs->Video.v_height;
-    aplfb->aux3 = (gBootArgs->Video.v_rowBytes >> 2);
-    aplfb->aux4 = (uint64_t)gFramebuffer;
+    simplefb->region_base = (uint64_t)gBootArgs->Video.v_baseAddr;
+    simplefb->region_size = fbsize;
+    simplefb->aux1 = gBootArgs->Video.v_width;
+    simplefb->aux2 = gBootArgs->Video.v_height;
+    simplefb->aux3 = (gBootArgs->Video.v_rowBytes >> 2);
+    simplefb->aux4 = (uint64_t)gFramebuffer;
 }
 
 static void devtree_fillup_rawimage()
